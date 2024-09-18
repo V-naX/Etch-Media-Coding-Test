@@ -259,37 +259,59 @@ async def classify_image(file: UploadFile = File(...)):
 Create a Dockerfile:
 
 ```bash
-# Use an official Python runtime as a parent image
-FROM python:3.8-slim
+# Use the official Python image from the Docker Hub
+FROM nvidia/cuda:12.6.0-devel-ubuntu20.04
 
-# Set the working directory in the container
-WORKDIR /app
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    build-essential \
+    wget \
+    && apt-get clean
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Install NVIDIA PyIndex to manage NVIDIA packages
+RUN pip install --no-cache-dir nvidia-pyindex
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the requirements file into the container
+COPY requirements.txt ./
 
-# Expose port 80
-EXPOSE 80
+# Install Python dependencies excluding TensorRT
+RUN sed -i '/^tensorrt==/d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Define environment variable
-ENV NAME World
+# Install TensorRT and its Python bindings
+RUN pip install --no-cache-dir nvidia-tensorrt==8.2.0.0
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+# Clone the torch2trt repository and install it
+RUN git clone https://github.com/NVIDIA-AI-IOT/torch2trt.git \
+    && cd torch2trt \
+    && python3 setup.py install
+
+# Copy the rest of the application code into the container
+COPY . .
+
+# Expose the port that the FastAPI app runs on
+EXPOSE 8000
+
+# Command to run the FastAPI app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
 ```
 
 ### 7. Build and Run the Docker Image
 Build the Docker image:
 
 ```bash
-docker build -t car-classifier .
+docker build --pull --rm -f "dockerfile" -t yolo-fastapi-app:latest "."
 ```
 
 Run the Docker container:
 
 ```bash
-docker run -p 80:80 car-classifier
+docker run --name container-name -d yolo-fastapi-app:latest
+
 ```
