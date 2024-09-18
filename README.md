@@ -128,39 +128,105 @@ Optimize the trained model with TensorRT:
 ```bash
 import torch
 import tensorrt as trt
+import numpy as np
 from torch2trt import torch2trt
+from ultralytics import YOLO
+from PIL import Image
+import os
 
-# Conversion function
-def convert_to_tensorrt(pytorch_model_path, engine_save_path, max_batch_size=16, int8_mode=False, calibration_dataset=None):
-    model = YOLO(pytorch_model_path)
-    model.eval()
-    model.to(device)
+# Update with your actual model path and desired engine save path
+pytorch_model_path = "/content/runs/classify/car_classifier/weights/best.pt"
+engine_save_path = "/content/runs/classify/car_classifier/weights/best.engine"
+calibration_data_path = "/content/made_model/val/toyota_vios"  # Path to your calibration images
 
-    logger = trt.Logger(trt.Logger.INFO)
-    builder = trt.Builder(logger)
-    network = builder.create_network(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-    config = builder.create_builder_config()
-    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)  # 1GB
+# Define the EntropyCalibrator class
+class EntropyCalibrator(trt.IInt8EntropyCalibrator2):
+    def __init__(self, calibration_images):
+        super(EntropyCalibrator, self).__init__()
+        self.calibration_images = calibration_images
+        self.current_index = 0
+        self.data = np.array(calibration_images, dtype=np.float32)
+        self.batch_size = len(calibration_images)
 
-    if int8_mode:
-        if calibration_dataset is None or len(calibration_dataset) == 0:
-            print("Calibration dataset is required for INT8 mode.")
-        else:
-            calibrator = EntropyCalibrator(calibration_dataset)  # Ensure this is defined
-            config.int8_calibrator = calibrator
-            config.set_flag(trt.BuilderFlag.INT8)
+    def get_batch_size(self):
+        return self.batch_size
 
-    x = torch.randn((max_batch_size, 3, 224, 224), device=device)
-    if device.type == 'cuda':
-        trt_model = torch2trt(model, [x], fp16_mode=False, int8_mode=int8_mode, max_batch_size=max_batch_size)
-        with open(engine_save_path, "wb") as f:
-            f.write(trt_model.engine.serialize())
-        print(f"TensorRT engine saved at {engine_save_path}")
+    def get_batch(self, names):
+        if self.current_index >= len(self.calibration_images):
+            return None
+        batch = self.data[self.current_index:self.current_index + self.batch_size]
+        self.current_index += self.batch_size
+        return batch
+
+    def read_calibration_cache(self):
+        return None
+
+    def write_calibration_cache(self, cache):
+        pass
+
+# Load YOLOv8 model directly
+yolo_model = YOLO(pytorch_model_path)  # Load model weights directly
+yolo_model.model.eval()
+
+# Check if CUDA is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Move the model to the appropriate device (GPU or CPU)
+yolo_model.model.to(device)
+
+# Create a TensorRT logger
+logger = trt.Logger(trt.Logger.INFO)
+
+# Build a TensorRT engine from the PyTorch model
+builder = trt.Builder(logger)
+network = builder.create_network(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+config = builder.create_builder_config()
+
+# Set maximum workspace size for TensorRT engine (in bytes)
+config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)  # 1GB
+
+# Check if INT8 mode is required
+int8_mode = True
+if int8_mode:
+    # Function to preprocess images
+    def preprocess_image(image, input_size=(224, 224)):
+        image = image.resize(input_size)
+        image = np.array(image).astype(np.float32) / 255.0
+        image = np.transpose(image, (2, 0, 1))  # Convert to (3, 224, 224)
+        return image
+
+    # Collect actual calibration dataset
+    calibration_dataset = []
+    for img_file in os.listdir(calibration_data_path):
+        img_path = os.path.join(calibration_data_path, img_file)
+        image = Image.open(img_path).convert('RGB')  # Ensure 3-channel RGB image
+        preprocessed_image = preprocess_image(image)
+        calibration_dataset.append(preprocessed_image)
+
+    calibration_dataset = np.array(calibration_dataset).astype(np.float32)
+
+    if calibration_dataset is None or len(calibration_dataset) == 0:
+        print("Calibration dataset is required for INT8 mode.")
     else:
-        print("TensorRT conversion is not supported on CPU.")
+        calibrator = EntropyCalibrator(calibration_dataset)
+        config.int8_calibrator = calibrator
+        config.set_flag(trt.BuilderFlag.INT8)
 
-# Example usage
-convert_to_tensorrt('/path/to/best.pt', '/path/to/best.engine', max_batch_size=16, int8_mode=True, calibration_dataset=calibration_dataset)
+# Dummy batch input for model conversion
+max_batch_size = 16
+dummy_input = torch.randn((max_batch_size, 3, 224, 224), device=device)
+
+# Convert the model to TensorRT (note that TensorRT works best with CUDA-enabled devices)
+if device.type == 'cuda':
+    trt_model = torch2trt(yolo_model.model, [dummy_input], fp16_mode=False, int8_mode=int8_mode, max_batch_size=max_batch_size)
+
+    # Save the TensorRT engine
+    with open(engine_save_path, "wb") as f:
+        f.write(trt_model.engine.serialize())
+    print(f"TensorRT engine saved at {engine_save_path}")
+else:
+    print("TensorRT conversion is not supported on CPU.")
 ```
 
 ### 5. Deploy the Model Using FastAPI
