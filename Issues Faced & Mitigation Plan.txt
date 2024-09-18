@@ -1,0 +1,36 @@
+Model Conversion to TensorRT: Challenges and Lessons Learned
+
+Overview:
+The goal was to convert a YOLOv8 model to TensorRT, with a specific requirement to use INT8 precision for maximum performance and efficiency. However, after running into multiple issues and constant crashes, I decided to go with FP16 instead. Here’s a breakdown of the challenges I faced during this process and why I made the switch.
+
+Challenges and How I Tackled Them:
+1. CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH Error:
+
+What happened: During model evaluation and inference, I encountered a persistent error: cuDNN_STATUS_BAD_PARAM_STREAM_MISMATCH. It always showed up when convolution layers were executed in the model.
+Why it happened: The error was caused by mismatches between tensor shapes or issues with the CUDA stream configuration. INT8 precision is more sensitive to these errors because of its strict hardware requirements and data alignment needs.
+What I did to fix it: I carefully checked the tensor dimensions and ensured they were properly aligned. While I managed to fix the mismatch, the model’s overall stability in INT8 remained problematic.
+
+2. Constant Runtime Crashes with INT8 Precision:
+
+What happened: INT8 precision is tricky—it requires a calibration step using a representative dataset. During this process, my runtime kept crashing, and debugging became a nightmare.
+Why it happened: INT8 precision demands accurate calibration to maintain performance, but it also uses a lot of memory. The crashes occurred because of the intensive memory load and challenges with correctly calibrating the model for INT8.
+What I did to fix it: After multiple attempts and frequent runtime crashes, I decided to switch to FP16. INT8 might have been a requirement, but the instability made it impractical for this setup. FP16, on the other hand, provided a faster, more stable alternative without constant crashes.
+
+
+Why I Switched to FP16 (Even Though INT8 Was Required):
+1. Stability:
+
+INT8 was supposed to provide the best performance, but it came with too many hurdles—especially the calibration. FP16 offered a more stable path, with fewer crashes and much smoother operations. In the end, I chose stability over squeezing out the last bit of performance from INT8.
+2. Performance:
+
+FP16 still provides a significant speed boost by leveraging Tensor Cores. It might not be as fast as INT8 in theory, but it offered a noticeable improvement compared to FP32, without the hassle of fine-tuning INT8 calibration.
+3. Memory Efficiency:
+
+FP16 also halved the memory usage compared to FP32, which helped prevent the constant runtime crashes I was facing with INT8. It turned out to be a practical choice that allowed me to continue development without sacrificing too much in terms of performance.
+
+
+Why I Chose FP16 Over INT8:
+Although INT8 was the original requirement, it became clear that the runtime instability, frequent crashes, and calibration challenges made it impractical for my situation. FP16, while not the requirement, was the best trade-off between speed, stability, and ease of use. Given the tight deadlines and the need for a working model, I made the decision to prioritize stability over a theoretical performance gain.
+
+Final Thoughts:
+Converting a YOLOv8 model to TensorRT with INT8 precision turned out to be more trouble than expected. Despite INT8 being a requirement, the constant crashes and errors like cuDNN_STATUS_BAD_PARAM_STREAM_MISMATCH pushed me to go with FP16 instead. FP16 provided the speed boost and memory efficiency I needed, without the frustration of frequent crashes or calibration problems. In the end, it was the more practical choice for delivering a stable solution within the project’s constraints.
