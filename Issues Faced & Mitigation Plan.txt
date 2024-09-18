@@ -34,3 +34,33 @@ Although INT8 was the original requirement, it became clear that the runtime ins
 
 Final Thoughts:
 Converting a YOLOv8 model to TensorRT with INT8 precision turned out to be more trouble than expected. Despite INT8 being a requirement, the constant crashes and errors like cuDNN_STATUS_BAD_PARAM_STREAM_MISMATCH pushed me to go with FP16 instead. FP16 provided the speed boost and memory efficiency I needed, without the frustration of frequent crashes or calibration problems. In the end, it was the more practical choice for delivering a stable solution within the project’s constraints.
+
+Challenges in Building Docker Image and Running Containers:
+
+1. PyCUDA Build Failures:
+
+Error Details:
+
+```
+error: command '/usr/bin/x86_64-linux-gnu-g++' failed with exit code 1
+ERROR: Failed building wheel for pycuda
+ERROR: Could not build wheels for pycuda which use PEP 517 and cannot be installed directly
+```
+
+Reason: The build process for PyCUDA failed due to compilation issues with C++ components. These issues often arise from missing system dependencies or configuration errors during the build process.
+Solution Attempted: Attempted to address the build issues by installing required build tools and libraries, but these changes did not resolve the underlying compilation problems.
+
+2. Alternative Installations Failing:
+
+Error Details:
+
+```
+ERROR: failed to solve: process "/bin/sh -c pip install --no-cache-dir pycuda" did not complete successfully: exit code: 1
+```
+
+Reason: Attempted to install PyCUDA directly from PyPI, but this also failed due to unresolved dependencies and build issues.
+Solution Attempted: Sought alternative methods to install PyCUDA, but encountered the same underlying issues that prevented successful installation.
+
+Conclusion:
+
+Despite multiple attempts to resolve the issues, the Docker image build failed due to unresolved errors with installing PyCUDA. The problems were related to missing dependencies, network issues, and build configuration errors. As a result, I was unable to build the Docker image and run the container as intended.
